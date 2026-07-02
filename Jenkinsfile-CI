@@ -2,84 +2,78 @@ pipeline {
     agent any
 
     environment {
-        ACR_NAME = "shivpetclinicacr2026"
         ACR_LOGIN_SERVER = "shivpetclinicacr2026.azurecr.io"
         IMAGE_NAME = "spring-petclinic"
-        IMAGE_TAG = "${BUILD_NUMBER}"
-        SONAR_HOST_URL = "http://<your-sonarqube-server-ip>:9000"
+        IMAGE_TAG = "latest"
     }
 
     stages {
-        stage('Clone Repository') {
+        stage('Checkout Code') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/spring-projects/spring-petclinic.git'
+                checkout scm
             }
         }
 
         stage('Maven Build') {
             steps {
-                sh './mvnw clean compile'
+                bat '.\\mvnw.cmd clean compile'
             }
         }
 
         stage('Unit Tests') {
             steps {
-                sh './mvnw test'
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
-                    sh """
-                    ./mvnw sonar:sonar \
-                    -Dsonar.projectKey=spring-petclinic \
-                    -Dsonar.host.url=${SONAR_HOST_URL} \
-                    -Dsonar.token=${SONAR_TOKEN}
-                    """
-                }
+                bat '.\\mvnw.cmd test'
             }
         }
 
         stage('Package JAR') {
             steps {
-                sh './mvnw clean package -DskipTests'
+                bat '.\\mvnw.cmd clean package -DskipTests'
             }
         }
 
-        stage('Docker Build') {
+        stage('Docker Build ARM64') {
             steps {
-                sh """
-                docker build -t ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG} .
-                docker tag ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG} ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:latest
+                bat """
+                docker buildx build --platform linux/arm64 ^
+                -t %ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG% ^
+                --load .
                 """
+            }
+        }
+
+        stage('Docker Login to ACR') {
+            steps {
+                bat 'az acr login --name shivpetclinicacr2026'
             }
         }
 
         stage('Trivy Scan') {
             steps {
-                sh """
-                trivy image --severity HIGH,CRITICAL --exit-code 0 \
-                ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}
+                bat """
+                trivy image --severity HIGH,CRITICAL --exit-code 0 ^
+                %ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG%
                 """
             }
         }
 
         stage('Push Image to ACR') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'acr-creds',
-                    usernameVariable: 'ACR_USERNAME',
-                    passwordVariable: 'ACR_PASSWORD'
-                )]) {
-                    sh """
-                    echo $ACR_PASSWORD | docker login ${ACR_LOGIN_SERVER} -u $ACR_USERNAME --password-stdin
-                    docker push ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}
-                    docker push ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:latest
-                    """
-                }
+                bat """
+                docker buildx build --platform linux/arm64 ^
+                -t %ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG% ^
+                --push .
+                """
             }
+        }
+    }
+
+    post {
+        success {
+            echo 'CI Pipeline completed successfully.'
+        }
+        failure {
+            echo 'CI Pipeline failed.'
         }
     }
 }
