@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+
+    environment {
+        ACR_NAME = "shivpetclinicacr2026"
+        ACR_LOGIN_SERVER = "shivpetclinicacr2026.azurecr.io"
+        IMAGE_NAME = "spring-petclinic"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        SONAR_HOST_URL = "http://<your-sonarqube-server-ip>:9000"
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/spring-projects/spring-petclinic.git'
+            }
+        }
+
+        stage('Maven Build') {
+            steps {
+                sh './mvnw clean compile'
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                sh './mvnw test'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                    sh """
+                    ./mvnw sonar:sonar \
+                    -Dsonar.projectKey=spring-petclinic \
+                    -Dsonar.host.url=${SONAR_HOST_URL} \
+                    -Dsonar.token=${SONAR_TOKEN}
+                    """
+                }
+            }
+        }
+
+        stage('Package JAR') {
+            steps {
+                sh './mvnw clean package -DskipTests'
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh """
+                docker build -t ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG} .
+                docker tag ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG} ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:latest
+                """
+            }
+        }
+
+        stage('Trivy Scan') {
+            steps {
+                sh """
+                trivy image --severity HIGH,CRITICAL --exit-code 0 \
+                ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}
+                """
+            }
+        }
+
+        stage('Push Image to ACR') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'acr-creds',
+                    usernameVariable: 'ACR_USERNAME',
+                    passwordVariable: 'ACR_PASSWORD'
+                )]) {
+                    sh """
+                    echo $ACR_PASSWORD | docker login ${ACR_LOGIN_SERVER} -u $ACR_USERNAME --password-stdin
+                    docker push ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push ${ACR_LOGIN_SERVER}/${IMAGE_NAME}:latest
+                    """
+                }
+            }
+        }
+    }
+}
