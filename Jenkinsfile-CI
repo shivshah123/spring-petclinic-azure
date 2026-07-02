@@ -5,6 +5,7 @@ pipeline {
         ACR_LOGIN_SERVER = "shivpetclinicacr2026.azurecr.io"
         IMAGE_NAME = "spring-petclinic"
         IMAGE_TAG = "latest"
+        TRIVY_PATH = "C:\\Users\\vishv\\AppData\\Local\\Microsoft\\WinGet\\Packages\\AquaSecurity.Trivy_Microsoft.Winget.Source_8wekyb3d8bbwe\\trivy.exe"
     }
 
     stages {
@@ -23,6 +24,14 @@ pipeline {
         stage('Unit Tests') {
             steps {
                 bat '.\\mvnw.cmd test'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    bat '.\\mvnw.cmd sonar:sonar -Dsonar.projectKey=spring-petclinic -Dsonar.projectName=spring-petclinic'
+                }
             }
         }
 
@@ -50,11 +59,12 @@ pipeline {
 
         stage('Trivy Scan') {
             steps {
-             bat '''
-            "C:\\Users\\vishv\\AppData\\Local\\Microsoft\\WinGet\\Packages\\AquaSecurity.Trivy_Microsoft.Winget.Source_8wekyb3d8bbwe\\trivy.exe" image --severity HIGH,CRITICAL --exit-code 0 %ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG%
-            '''
-    }
-}
+                bat """
+                "%TRIVY_PATH%" image --severity HIGH,CRITICAL --exit-code 0 ^
+                %ACR_LOGIN_SERVER%/%IMAGE_NAME%:%IMAGE_TAG%
+                """
+            }
+        }
 
         stage('Push Image to ACR') {
             steps {
@@ -69,7 +79,7 @@ pipeline {
 
     post {
         success {
-            echo 'CI Pipeline completed successfully.'
+            echo 'CI Pipeline completed successfully with SonarQube, Trivy, and ACR push.'
         }
         failure {
             echo 'CI Pipeline failed.'
