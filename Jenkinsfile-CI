@@ -27,19 +27,19 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
+       stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    bat '.\\mvnw.cmd sonar:sonar -Dsonar.projectKey=spring-petclinic -Dsonar.projectName=spring-petclinic'
-                }
+             withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+             bat '.\\mvnw.cmd sonar:sonar -Dsonar.projectKey=spring-petclinic -Dsonar.projectName=spring-petclinic -Dsonar.host.url=http://localhost:9000 -Dsonar.token=%SONAR_TOKEN%'
             }
         }
+    }
 
         stage('Package JAR') {
             steps {
                 bat '.\\mvnw.cmd clean package -DskipTests'
             }
-        }
+    }
 
         stage('Docker Build ARM64') {
             steps {
