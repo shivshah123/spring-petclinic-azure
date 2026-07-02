@@ -4,49 +4,30 @@ pipeline {
     environment {
         RESOURCE_GROUP = "rg-petclinic"
         AKS_CLUSTER = "aks-petclinic"
+        NAMESPACE = "petclinic"
     }
 
     stages {
-        stage('Clone Repository') {
+        stage('Checkout Code') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/spring-projects/spring-petclinic.git'
-            }
-        }
-
-        stage('Azure Login') {
-            steps {
-                withCredentials([string(credentialsId: 'azure-sp', variable: 'AZURE_CREDENTIALS')]) {
-                    sh """
-                    echo '${AZURE_CREDENTIALS}' > azure.json
-
-                    CLIENT_ID=\$(cat azure.json | jq -r .clientId)
-                    CLIENT_SECRET=\$(cat azure.json | jq -r .clientSecret)
-                    TENANT_ID=\$(cat azure.json | jq -r .tenantId)
-
-                    az login --service-principal \
-                      --username \$CLIENT_ID \
-                      --password \$CLIENT_SECRET \
-                      --tenant \$TENANT_ID
-                    """
-                }
+                checkout scm
             }
         }
 
         stage('Connect to AKS') {
             steps {
-                sh """
-                az aks get-credentials \
-                  --resource-group ${RESOURCE_GROUP} \
-                  --name ${AKS_CLUSTER} \
-                  --overwrite-existing
+                bat """
+                az aks get-credentials ^
+                --resource-group %RESOURCE_GROUP% ^
+                --name %AKS_CLUSTER% ^
+                --overwrite-existing
                 """
             }
         }
 
         stage('Deploy to AKS') {
             steps {
-                sh """
+                bat """
                 kubectl apply -f k8s/namespace.yaml
                 kubectl apply -f k8s/deployment.yaml
                 kubectl apply -f k8s/service.yaml
@@ -54,14 +35,31 @@ pipeline {
             }
         }
 
-        stage('Monitor Deployment Status') {
+        stage('Restart Deployment') {
             steps {
-                sh """
-                kubectl rollout status deployment/petclinic-app -n petclinic
-                kubectl get pods -n petclinic
-                kubectl get svc -n petclinic
+                bat """
+                kubectl rollout restart deployment/petclinic-app -n %NAMESPACE%
                 """
             }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                bat """
+                kubectl rollout status deployment/petclinic-app -n %NAMESPACE%
+                kubectl get pods -n %NAMESPACE%
+                kubectl get svc -n %NAMESPACE%
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'CD Pipeline completed successfully. Application deployed to AKS.'
+        }
+        failure {
+            echo 'CD Pipeline failed.'
         }
     }
 }
