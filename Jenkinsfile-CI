@@ -27,12 +27,12 @@ pipeline {
             }
         }
 
-       stage('SonarQube Analysis') {
-             steps {
-             withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
-             bat '.\\mvnw.cmd sonar:sonar -Dsonar.projectKey=spring-petclinic -Dsonar.projectName=spring-petclinic -Dsonar.host.url=http://localhost:9000 -Dsonar.login=%SONAR_TOKEN%'
+            stage('SonarQube Analysis') {
+              steps {
+              withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+              bat '.\\mvnw.cmd sonar:sonar -Dsonar.projectKey=Spring-PetClinic -Dsonar.projectName=Spring-PetClinic -Dsonar.host.url=http://localhost:9000 -Dsonar.login=%SONAR_TOKEN%'
             }
-        }
+       }
     }
         stage('Package JAR') {
             steps {
